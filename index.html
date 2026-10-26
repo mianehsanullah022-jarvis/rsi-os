@@ -64,6 +64,7 @@ main{padding:20px 24px 80px;max-width:1100px;width:100%;min-width:0;margin:0 aut
 .tg input:focus-visible+i{outline:2px solid #005bd3;outline-offset:2px}
 .frow.dim{opacity:.45}
 .fbtns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.btn.rcpt{padding:6px 10px}
 /* common */
 h1{font-size:20px;margin:0;color:var(--strong);font-weight:700}
 .ph{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
@@ -350,10 +351,13 @@ function homeView(){
 let otab="all",oq="";
 function orderTable(list){
   if(!list.length)return`<div class="empty">No orders here yet. When customers buy from the store, orders show up here.</div>`;
-  return`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Order</th><th class="hm">Date</th><th>Customer</th><th class="r">Total</th><th class="hm">Payment</th><th>Status</th></tr></thead><tbody>
+  return`<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Order</th><th class="hm">Date</th><th>Customer</th><th class="r">Total</th><th class="hm">Payment</th><th>Status</th><th class="r">Receipt</th></tr></thead><tbody>
   ${list.map(o=>`<tr class="click" onclick="location.hash='#/orders/${o.order_no}'"><td><b>#${o.order_no}</b></td><td class="hm muted">${fdate(o.created_at)}</td>
    <td>${esc(o.customer_name)}<div class="muted" style="font-size:12.5px">${esc(o.city)}</div></td><td class="r"><b>${rs(o.total)}</b></td>
-   <td class="hm">${pill(o.payment_status)} <span class="muted" style="font-size:12px">${o.payment_method==="cod"?"COD":PAYN[o.payment_method]}</span></td><td>${pill(o.status)}</td></tr>`).join("")}</tbody></table></div>`;
+   <td class="hm">${pill(o.payment_status)} <span class="muted" style="font-size:12px">${o.payment_method==="cod"?"COD":PAYN[o.payment_method]}</span></td><td>${pill(o.status)}</td>
+   <td class="r"><button class="btn rcpt" onclick="event.stopPropagation();printNo(${o.order_no})" aria-label="Print receipt for order ${o.order_no}" title="Print receipt"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg><span class="hm">Print</span></button></td></tr>`).join("")}</tbody></table></div>`;
+}
+function printNo(no){const o=orders.find(x=>x.order_no===no);if(o)printReceipt(o);
 }
 function ordersView(){
   const tabs=[["all","All"],["pending","Pending"],["confirmed","Confirmed"],["packed","Packed"],["shipped","Shipped"],["delivered","Delivered"],["unpaid","Unpaid online"],["cancelled","Cancelled"]];
