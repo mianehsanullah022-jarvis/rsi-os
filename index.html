@@ -389,7 +389,7 @@ function orderView(no){
     pay:`Hi ${nm}, for order RSI-${o.order_no} please send ${rs(o.total)} and share the transaction ID/screenshot here. Thank you!`};
   const wa=k=>`https://wa.me/${phone92(o.phone)}?text=${encodeURIComponent(msgs[k])}`;
   const next={pending:["confirmed","Confirm order"],confirmed:["packed","Mark as packed"],packed:["shipped","Mark as shipped"],shipped:["delivered","Mark as delivered"]}[o.status];
-  M.innerHTML=`<div class="ph"><a class="back" href="#/orders" aria-label="Back">←</a><h1>#${o.order_no}</h1>${pill(o.payment_status)}${pill(o.status)}<span class="muted">${fdate(o.created_at)}</span><span class="sp"></span><button class="btn" id="print">Print slip</button></div>
+  M.innerHTML=`<div class="ph"><a class="back" href="#/orders" aria-label="Back">←</a><h1>#${o.order_no}</h1>${pill(o.payment_status)}${pill(o.status)}<span class="muted">${fdate(o.created_at)}</span><span class="sp"></span><button class="btn" id="receipt">Print receipt</button><button class="btn" id="print">Print slip</button></div>
    <div class="cols"><div>
     <div class="card"><h2>Items</h2>${o.items.map(i=>`<div class="item">${i.image?`<img class="thumb" src="${esc(i.image)}" alt="">`:`<div class="thumb noimg">—</div>`}<div><b>${esc(i.name)}</b><div class="muted">${rs(i.price)} × ${i.qty}</div></div><b>${rs(i.price*i.qty)}</b></div>`).join("")}
      <div style="margin-top:10px"><div class="sumrow"><span>Subtotal</span><span>${rs(o.subtotal)}</span></div><div class="sumrow"><span>Delivery</span><span>${o.delivery_fee?rs(o.delivery_fee):"Free"}</span></div>${o.discount?`<div class="sumrow"><span>Discount</span><span>−${rs(o.discount)}</span></div>`:""}<div class="sumrow t"><span>Total</span><span>${rs(o.total)}</span></div></div>
@@ -410,7 +410,8 @@ function orderView(no){
     <div class="card"><h2>Shipping address</h2><p style="margin:0 0 8px">${esc(o.customer_name)}<br>${esc(o.address)}<br>${esc(o.city)}<br>${esc(o.phone)}</p><button class="btn" id="copyAddr">Copy address</button></div>
    </div></div>`;
   const on=(id,fn)=>{const e=$("#"+id);if(e)e.onclick=fn};
-  on("next",async()=>{if(next[0]==="confirmed"&&o.status==="pending")await adjustStock(o,-1);patchOrder(o,{status:next[0]},`Order ${STN[next[0]].toLowerCase()}`)});
+  on("next",async()=>{const conf=next[0]==="confirmed";if(conf&&o.status==="pending")await adjustStock(o,-1);await patchOrder(o,{status:next[0]},`Order ${STN[next[0]].toLowerCase()}`);
+    if(conf&&o.status==="confirmed"&&fon("os_autoprint"))printReceipt(o)});
   on("cancel",async()=>{if(!confirm(`Cancel order #${o.order_no}?`))return;if(o.status!=="pending")await adjustStock(o,1);patchOrder(o,{status:"cancelled"},"Order cancelled")});
   on("reopen",async()=>{patchOrder(o,{status:"pending"},"Order reopened")});
   on("ret",async()=>{if(!confirm("Mark this order as returned? Stock will be added back."))return;await adjustStock(o,1);patchOrder(o,{status:"returned"},"Marked returned")});
@@ -421,7 +422,48 @@ function orderView(no){
   on("saveNote",()=>patchOrder(o,{admin_note:$("#an").value.trim()||null},"Note saved"));
   on("copyAddr",()=>{navigator.clipboard.writeText(`${o.customer_name}\n${o.phone}\n${o.address}\n${o.city}\nCOD: ${o.payment_method==="cod"&&o.payment_status!=="paid"?o.total:0}`).then(()=>toast("Address copied"))});
   on("print",()=>printSlip(o));
+  on("receipt",()=>printReceipt(o));
 }
+/* customer receipt: prints through a hidden frame, so no pop-up is needed */
+function printReceipt(o){
+  const st=settings.store||{},cod=o.payment_method==="cod"&&o.payment_status!=="paid";
+  const d=new Date(o.created_at),dt=d.toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"})+" "+d.toLocaleTimeString("en-PK",{hour:"2-digit",minute:"2-digit"});
+  const row=(a,b,c="")=>`<div class="r ${c}"><span>${a}</span><span>${b}</span></div>`;
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Receipt RSI-${o.order_no}</title><style>
+   @page{margin:5mm}*{box-sizing:border-box}
+   body{margin:0 auto;max-width:76mm;font:12.5px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#000}
+   .c{text-align:center}.brand{font:800 italic 22px/1 system-ui,sans-serif;letter-spacing:.02em}
+   .sub{font-size:11px}.hr{border-top:1px dashed #000;margin:8px 0}
+   .r{display:flex;justify-content:space-between;gap:8px}.r span:last-child{text-align:right;white-space:nowrap}
+   .it{margin:4px 0}.it b{display:block;font-weight:600}
+   .tot{font-size:15px;font-weight:800}.box{border:1.5px solid #000;padding:6px;text-align:center;font-weight:800;font-size:14px;margin:8px 0}
+   .sm{font-size:11px}</style></head><body>
+   <div class="c"><div class="brand">RSI ACCESSORIES</div>
+    <div class="sub">${esc(st.city||"Pakistan")}${st.whatsapp?" • WhatsApp "+esc(st.whatsapp):""}</div>
+    <div class="sub">${esc(STORE_URL.replace(/^https?:\/\//,"").replace(/\/$/,""))}</div></div>
+   <div class="hr"></div>
+   <div class="c" style="font-weight:800;font-size:14px">RECEIPT</div>
+   ${row("Order","RSI-"+o.order_no)}${row("Date",dt)}${row("Status",STN[o.status]||o.status)}
+   <div class="hr"></div>
+   <div><b>${esc(o.customer_name)}</b><br>${esc(o.phone)}<br>${esc(o.address)}<br>${esc(o.city)}</div>
+   <div class="hr"></div>
+   ${o.items.map(i=>`<div class="it"><b>${esc(i.name)}</b>${row(`${i.qty} x ${rs(i.price)}`,rs(i.price*i.qty))}</div>`).join("")}
+   <div class="hr"></div>
+   ${row("Subtotal",rs(o.subtotal))}${row("Delivery",o.delivery_fee?rs(o.delivery_fee):"Free")}${o.discount?row("Discount","-"+rs(o.discount)):""}
+   ${row("TOTAL",rs(o.total),"tot")}
+   <div class="hr"></div>
+   ${row("Payment",PAYN[o.payment_method]||o.payment_method)}${o.payment_ref?row("Txn ID",esc(o.payment_ref)):""}
+   <div class="box">${cod?"CASH ON DELIVERY: "+rs(o.total):o.payment_status==="paid"?"PAID - THANK YOU":"PAYMENT PENDING: "+rs(o.total)}</div>
+   ${o.note?`<div class="sm"><b>Note:</b> ${esc(o.note)}</div><div class="hr"></div>`:""}
+   <div class="c sm">Thank you for shopping with RSI Accessories!<br>Questions? WhatsApp us with your order number.</div>
+  </body></html>`;
+  const old=$("#rcptFrame");if(old)old.remove();
+  const fr=document.createElement("iframe");fr.id="rcptFrame";fr.setAttribute("aria-hidden","true");
+  fr.style.cssText="position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  fr.onload=()=>{try{fr.contentWindow.focus();fr.contentWindow.print()}catch{toast("Couldn't open printing")}};
+  fr.srcdoc=html;document.body.appendChild(fr);
+}
+
 function printSlip(o){
   const cod=o.payment_method==="cod"&&o.payment_status!=="paid";
   const w=window.open("","_blank");if(!w)return toast("Allow pop-ups to print");
@@ -457,7 +499,7 @@ function newOrder(){
     if(!v("nn")||v("np").replace(/\D/g,"").length<10||!v("nc")||!v("na"))return $("#nerr").textContent="Fill in name, a valid phone, city and address.";
     const t=calc();
     try{const [o]=await api("/rest/v1/orders",{method:"POST",body:JSON.stringify({customer_name:v("nn"),phone:v("np"),city:v("nc"),address:v("na"),items:lines,subtotal:t.sub,delivery_fee:t.fee,discount:t.dis,total:t.total,payment_method:$("#npm").value,payment_status:$("#nps").value,status:"confirmed"})});
-      await adjustStock(o,-1);orders.unshift(o);lastMax=Math.max(lastMax,o.order_no);toast(`Order #${o.order_no} created`);location.hash="#/orders/"+o.order_no}
+      await adjustStock(o,-1);orders.unshift(o);lastMax=Math.max(lastMax,o.order_no);toast(`Order #${o.order_no} created`);location.hash="#/orders/"+o.order_no;if(fon("os_autoprint"))printReceipt(o)}
     catch(e){$("#nerr").textContent=e.message}
   };
 }
@@ -611,7 +653,8 @@ const FEATURES=[
   ["os_poll","Check for new orders","Looks for new orders every 25 seconds"],
   ["os_beep","New order sound","Beep when a new order comes"],
   ["os_notify","New order notification","Phone / desktop notification"],
-  ["os_refresh","Auto refresh","Reload all data every 2 minutes"]]]
+  ["os_refresh","Auto refresh","Reload all data every 2 minutes"],
+  ["os_autoprint","Auto print receipt","Print a receipt right after you confirm an order"]]]
 ];
 function featuresCard(){
   const box=$("#fcard");if(!box)return;const f=settings.features||{};
