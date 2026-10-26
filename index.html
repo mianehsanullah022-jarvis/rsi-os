@@ -50,6 +50,20 @@ main{padding:20px 24px 80px;max-width:1100px;width:100%;min-width:0;margin:0 aut
  main{padding:14px 12px 90px}
  .search{display:none}
 }
+/* feature switches */
+.fsec{margin:14px 0 4px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.frow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #ebebeb}
+.frow:first-of-type{border-top:0}
+.frow .ft{flex:1;min-width:0}.frow .ft b{display:block;color:var(--strong)}.frow .ft span{color:var(--muted);font-size:13px}
+.tg{position:relative;width:44px;height:26px;flex:none}
+.tg input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
+.tg i{position:absolute;inset:0;border-radius:13px;background:#c9c9c9;transition:background .2s}
+.tg i::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .2s}
+.tg input:checked+i{background:#0f8a4b}
+.tg input:checked+i::after{transform:translateX(18px)}
+.tg input:focus-visible+i{outline:2px solid #005bd3;outline-offset:2px}
+.frow.dim{opacity:.45}
+.fbtns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 /* common */
 h1{font-size:20px;margin:0;color:var(--strong);font-weight:700}
 .ph{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
@@ -254,12 +268,13 @@ async function loadAll(){
 }
 function badge(){const n=orders.filter(o=>o.status==="pending").length;const c=$("#pendCnt");c.textContent=n;c.classList.toggle("hidden",!n);document.title=(n?`(${n}) `:"")+"RSI OS"}
 function beep(){try{const a=new (window.AudioContext||window.webkitAudioContext)();[0,.18].forEach(t=>{const o=a.createOscillator(),g=a.createGain();o.frequency.value=880;o.connect(g);g.connect(a.destination);g.gain.setValueAtTime(.2,a.currentTime+t);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+t+.15);o.start(a.currentTime+t);o.stop(a.currentTime+t+.16)})}catch{}}
+const fon=k=>(settings.features||{})[k]!==false;
 async function poll(){
-  if(!sess||document.hidden)return;
+  if(!sess||document.hidden||!fon("os_poll"))return;
   try{
     const n=await api(`/rest/v1/orders?select=*&order_no=gt.${lastMax}&order=order_no.asc`);
-    if(n.length){orders=[...n.reverse(),...orders];lastMax=Math.max(lastMax,...n.map(o=>o.order_no));badge();beep();toast(`New order RSI-${n[0].order_no} — ${rs(n[0].total)}`);
-      if("Notification" in window&&Notification.permission==="granted")new Notification("New RSI order",{body:`RSI-${n[0].order_no} • ${n[0].customer_name} • ${rs(n[0].total)}`,icon:"icon-192.png"});
+    if(n.length){orders=[...n.reverse(),...orders];lastMax=Math.max(lastMax,...n.map(o=>o.order_no));badge();if(fon("os_beep"))beep();toast(`New order RSI-${n[0].order_no} — ${rs(n[0].total)}`);
+      if(fon("os_notify")&&"Notification" in window&&Notification.permission==="granted")new Notification("New RSI order",{body:`RSI-${n[0].order_no} • ${n[0].customer_name} • ${rs(n[0].total)}`,icon:"icon-192.png"});
       const r=location.hash;if(r==="#/home"||r==="#/orders"||r==="")route()}
   }catch{}
 }
@@ -267,7 +282,7 @@ setInterval(poll,25000);document.addEventListener("visibilitychange",poll);
 
 /* full refresh every 2 minutes: picks up status, stock, product and settings changes */
 async function refresh(){
-  if(!sess||document.hidden)return;
+  if(!sess||document.hidden||!fon("os_refresh"))return;
   const r=location.hash||"#/home",parts=r.slice(2).split("/");
   const listPage=["","home","orders","products","customers"].includes(parts[0])&&!parts[1];
   const typing=document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
@@ -546,8 +561,10 @@ function settingsView(){
     <div class="grid2"><div><label for="jt">JazzCash account title</label><input id="jt" value="${esc(j.title||"")}"></div><div><label for="jn">JazzCash number</label><input id="jn" value="${esc(j.number||"")}"></div></div>
     <div class="grid2"><div><label for="et">Easypaisa account title</label><input id="et" value="${esc(e.title||"")}"></div><div><label for="en">Easypaisa number</label><input id="en" value="${esc(e.number||"")}"></div></div>
     <div class="grid3"><div><label for="bb">Bank name</label><input id="bb" value="${esc(b.bank||"")}"></div><div><label for="bt">Account title</label><input id="bt" value="${esc(b.title||"")}"></div><div><label for="bi">IBAN / account no</label><input id="bi" value="${esc(b.iban||"")}"></div></div></div>
+   <div class="card" id="fcard"></div>
    <div class="card"><h2>Your links</h2><div class="kv"><span>Online store: <a href="${STORE_URL}" target="_blank" rel="noopener">${STORE_URL}</a></span><span>Logged in as ${esc(sess&&sess.email||"")}</span></div></div>
    <div class="savebar"><span class="sp">Store settings</span><button class="btn" id="ssave">Save</button></div>`;
+  featuresCard();
   $("#ssave").onclick=async()=>{
     const v=id=>$("#"+id).value.trim();
     const store={...s,whatsapp:v("sw"),city:v("sc"),delivery_fee:+v("sf")||0,free_delivery_over:+v("so")||0,announcement:v("sa")};
@@ -555,6 +572,67 @@ function settingsView(){
     try{await api("/rest/v1/settings?key=eq.store",{method:"PATCH",body:JSON.stringify({value:store})});await api("/rest/v1/settings?key=eq.payments",{method:"PATCH",body:JSON.stringify({value:payments})});
       settings.store=store;settings.payments=payments;toast("Settings saved")}catch(er){toast(er.message)}
   };
+}
+
+/* ---------- feature switches (saved instantly) ---------- */
+const FEATURES=[
+ ["Store — selling",[
+  ["orders","Taking orders","Turn off to pause all new orders (holiday, out of stock)"],
+  ["pay_cod","Cash on Delivery","Show COD at checkout"],
+  ["pay_jazzcash","JazzCash","Show JazzCash at checkout"],
+  ["pay_easypaisa","Easypaisa","Show Easypaisa at checkout"],
+  ["pay_bank","Bank transfer","Show bank transfer at checkout"]]],
+ ["Store — page parts",[
+  ["announce","Top announcement bar","The red line at the very top"],
+  ["whatsapp","WhatsApp button","Green chat button in the corner"],
+  ["trust","Trust strip","COD / All over Pakistan / Online payment boxes"],
+  ["chips","Category filter","All / Massagers / Grooming buttons"],
+  ["track","Track order page","Lets customers track with order no + phone"],
+  ["reviews","Customer reviews","Reviews section on the home page"],
+  ["pings","Sale pings","“Someone in Karachi ordered…” popups (real orders)"],
+  ["lowstock","Low stock warning","“Only 3 left” when stock is 5 or less"],
+  ["freebar","Free delivery bar","Progress bar in the cart"],
+  ["sticky","Sticky buy bar","Buy now bar at the bottom of product pages"],
+  ["zoom","Photo zoom","Tap a product photo to see it big"]]],
+ ["Store — animations",[
+  ["anim","All animations","Master switch. Off = no animations anywhere"],
+  ["hero","Hero reveal","Top photo and text slide in"],
+  ["rotator","Word rotator","“Perfect for gifting / the gym…”"],
+  ["priceroll","Price roll","Old price rolls down to new price"],
+  ["clickok","Click success","Green “✓ Added” + cart number jump"],
+  ["fly","Fly to cart","Photo flies into the cart icon"],
+  ["cardsfx","Cards fade in","Products rise up while scrolling"],
+  ["hoverswap","Photo swap on hover","2nd photo on laptop mouse-over"],
+  ["ticker","Announcement ticker","Top bar scrolls when text is long"],
+  ["confetti","Order confetti","Confetti after placing an order"],
+  ["trackfill","Tracking line fill","Line fills step by step on Track order"],
+  ["wawiggle","WhatsApp wiggle","Button wiggles once after 10 seconds"]]],
+ ["RSI OS",[
+  ["os_poll","Check for new orders","Looks for new orders every 25 seconds"],
+  ["os_beep","New order sound","Beep when a new order comes"],
+  ["os_notify","New order notification","Phone / desktop notification"],
+  ["os_refresh","Auto refresh","Reload all data every 2 minutes"]]]
+];
+function featuresCard(){
+  const box=$("#fcard");if(!box)return;const f=settings.features||{};
+  box.innerHTML=`<h2>Features — turn anything on or off</h2><p class="muted" style="margin:0 0 6px">Changes save right away. The store updates when customers open or refresh the page.</p>
+   <div class="fbtns"><button class="btn" id="fAllOn">Turn all on</button></div>
+   ${FEATURES.map(([sec,rows])=>`<div class="fsec">${sec}</div>${rows.map(([k,t,d])=>`<label class="frow${k!=="anim"&&sec.endsWith("animations")&&f.anim===false?" dim":""}" data-k="${k}">
+     <span class="ft"><b>${t}</b><span>${d}</span></span>
+     <span class="tg"><input type="checkbox" data-k="${k}" ${f[k]!==false?"checked":""} aria-label="${t}"><i></i></span></label>`).join("")}`).join("")}`;
+  box.querySelectorAll("input[data-k]").forEach(c=>c.onchange=()=>saveFeature(c.dataset.k,c.checked,c));
+  $("#fAllOn").onclick=async()=>{const old=settings.features;settings.features={};
+    try{await api("/rest/v1/settings?key=eq.features",{method:"PATCH",body:JSON.stringify({value:{}})});toast("All features are on");featuresCard()}
+    catch(er){settings.features=old;toast(er.message)}};
+}
+async function saveFeature(k,val,el){
+  const old=settings.features||{},next={...old,[k]:val};
+  if(k.startsWith("pay_")&&!val&&["cod","jazzcash","easypaisa","bank"].every(p=>next["pay_"+p]===false)){
+    el.checked=true;toast("Keep at least one payment method on (or turn off “Taking orders”)");return}
+  settings.features=next;
+  try{await api("/rest/v1/settings?key=eq.features",{method:"PATCH",body:JSON.stringify({value:next})});
+    toast(`${val?"Turned on":"Turned off"}: ${el.getAttribute("aria-label")}`);if(k==="anim")featuresCard()}
+  catch(er){settings.features=old;el.checked=!val;toast("Couldn't save: "+er.message)}
 }
 
 /* ---------- start ---------- */
