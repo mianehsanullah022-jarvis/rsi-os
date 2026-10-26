@@ -265,6 +265,19 @@ async function poll(){
 }
 setInterval(poll,25000);document.addEventListener("visibilitychange",poll);
 
+/* full refresh every 2 minutes: picks up status, stock, product and settings changes */
+async function refresh(){
+  if(!sess||document.hidden)return;
+  const r=location.hash||"#/home",parts=r.slice(2).split("/");
+  const listPage=["","home","orders","products","customers"].includes(parts[0])&&!parts[1];
+  const typing=document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  try{
+    await poll();await loadAll();
+    if(listPage&&!typing){const y=scrollY;route();window.scrollTo(0,y)}
+  }catch{}
+}
+setInterval(refresh,120000);
+
 /* ---------- router ---------- */
 function route(){
   const [,a,b]=(location.hash.slice(1)||"/home").split("/");
